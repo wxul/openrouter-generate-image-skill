@@ -19,21 +19,13 @@ interface CliArgs {
 
 interface OpenRouterChoice {
   message: {
-    content:
-      | string
-      | Array<{
-          type: string;
-          text?: string;
-          image_url?: { url: string };
-          // Gemini-style inline_data
-          inline_data?: { mime_type: string; data: string };
-        }>;
+    content?: string;
+    images?: Array<{ image_url: { url: string } }>;
   };
 }
 
 interface OpenRouterResponse {
   choices?: OpenRouterChoice[];
-  data?: Array<{ b64_json?: string; url?: string }>;
   error?: { message: string; code?: number };
 }
 
@@ -68,7 +60,7 @@ function parseArgs(argv: string[]): CliArgs {
 
   return {
     prompt,
-    model: map.get("model") ?? "google/gemini-3-pro-image-preview",
+    model: map.get("model") ?? "google/gemini-3.1-flash-image-preview",
     width: parseInt(map.get("width") ?? "1024", 10),
     height: parseInt(map.get("height") ?? "1024", 10),
     output: map.get("output") ?? defaultOutput,
@@ -99,55 +91,38 @@ async function fetchWithProxy(
 }
 
 // ---------------------------------------------------------------------------
-// Extract image data from various response formats
+// Aspect ratio helper
+// ---------------------------------------------------------------------------
+
+function getAspectRatio(width: number, height: number): string {
+  const ratio = width / height;
+  if (ratio > 1.6) return "16:9";
+  if (ratio > 1.2) return "4:3";
+  if (ratio < 0.625) return "9:16";
+  if (ratio < 0.833) return "3:4";
+  return "1:1";
+}
+
+// ---------------------------------------------------------------------------
+// Extract image data from response
 // ---------------------------------------------------------------------------
 
 function extractImageBase64(data: OpenRouterResponse): string {
-  // Format 1: choices[].message.content as multipart array (Gemini, etc.)
-  if (data.choices?.length) {
-    const content = data.choices[0].message.content;
-
-    if (Array.isArray(content)) {
-      for (const part of content) {
-        // image_url with data URI
-        if (part.type === "image_url" && part.image_url?.url) {
-          const match = part.image_url.url.match(
-            /^data:image\/[^;]+;base64,(.+)$/
-          );
-          if (match) return match[1];
-        }
-        // inline_data (Gemini native format)
-        if (part.inline_data?.data) {
-          return part.inline_data.data;
-        }
-      }
-    }
-
-    // Content is a string containing base64
-    if (typeof content === "string") {
-      // Try to extract base64 from markdown image or data URI
-      const dataUriMatch = content.match(
-        /data:image\/[^;]+;base64,([A-Za-z0-9+/=]+)/
-      );
-      if (dataUriMatch) return dataUriMatch[1];
-
-      // If it looks like raw base64
-      if (/^[A-Za-z0-9+/=]{100,}$/.test(content.trim())) {
-        return content.trim();
-      }
-    }
+  const images = data.choices?.[0]?.message?.images;
+  if (!images || images.length === 0) {
+    throw new Error(
+      `No images returned in response.\n` +
+        `Full response: ${JSON.stringify(data).slice(0, 500)}`
+    );
   }
 
-  // Format 2: data[].b64_json (DALL-E / FLUX style)
-  if (data.data?.length) {
-    const item = data.data[0];
-    if (item.b64_json) return item.b64_json;
+  const dataUrl = images[0].image_url.url;
+  const base64Match = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+  if (!base64Match) {
+    throw new Error("Could not parse base64 image data");
   }
 
-  throw new Error(
-    `Could not extract image from response. Response keys: ${JSON.stringify(Object.keys(data))}\n` +
-      `Full response: ${JSON.stringify(data).slice(0, 500)}`
-  );
+  return base64Match[1];
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +146,7 @@ async function main() {
   }
 
   // Build request body
+  const aspectRatio = getAspectRatio(args.width, args.height);
   const body: Record<string, unknown> = {
     model: args.model,
     messages: [
@@ -179,14 +155,11 @@ async function main() {
         content: args.prompt,
       },
     ],
+    modalities: ["image", "text"],
+    image_config: {
+      aspect_ratio: aspectRatio,
+    },
   };
-
-  // Some models support image size via provider params or model-specific fields
-  if (args.width || args.height) {
-    body.generation_config = {
-      response_modalities: ["TEXT", "IMAGE"],
-    };
-  }
 
   console.error(`Generating image with ${args.model}...`);
   console.error(`Prompt: "${args.prompt}"`);

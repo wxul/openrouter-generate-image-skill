@@ -5,7 +5,7 @@ description: Use when the user needs to generate images, UI assets, icons, backg
 
 # Generate Image via OpenRouter
 
-Generate images using OpenRouter's image models from the command line. Default model: `google/gemini-3-pro-image-preview`.
+Generate images using OpenRouter's image models from the command line. Default model: `google/gemini-3.1-flash-image-preview`.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ Run the script via `npx tsx`:
 ```bash
 npx tsx generate-image.ts \
   --prompt "description of the image" \
-  --model "google/gemini-3-pro-image-preview" \
+  --model "google/gemini-3.1-flash-image-preview" \
   --width 1024 --height 1024 \
   --output "filename.png" \
   --dir "./generated-images" \
@@ -31,7 +31,7 @@ npx tsx generate-image.ts \
 | Param | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `--prompt` | Yes | - | Image description |
-| `--model` | No | `google/gemini-3-pro-image-preview` | OpenRouter model ID |
+| `--model` | No | `google/gemini-3.1-flash-image-preview` | OpenRouter model ID |
 | `--width` | No | 1024 | Image width |
 | `--height` | No | 1024 | Image height |
 | `--output` | No | auto (timestamp-slug.png) | Output filename |
@@ -40,7 +40,7 @@ npx tsx generate-image.ts \
 
 ## Supported Models
 
-- `google/gemini-3-pro-image-preview` (default, recommended)
+- `google/gemini-3.1-flash-image-preview` (default, recommended)
 - `black-forest-labs/flux-1.1-pro`
 - `black-forest-labs/flux-schnell`
 - Any OpenRouter model that supports image generation
