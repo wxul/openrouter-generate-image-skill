@@ -1,0 +1,24 @@
+{
+  "name": "openrouter-generate-image-skill",
+  "version": "1.0.0",
+  "description": "A Claude Code skill for generating images via OpenRouter API, supporting Gemini, FLUX, and other image models.",
+  "main": "skills/generate-image/generate-image.ts",
+  "type": "module",
+  "scripts": {
+    "generate": "npx tsx skills/generate-image/generate-image.ts"
+  },
+  "keywords": [
+    "claude-code",
+    "skill",
+    "openrouter",
+    "image-generation",
+    "ai",
+    "gemini",
+    "flux"
+  ],
+  "author": "albert",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
