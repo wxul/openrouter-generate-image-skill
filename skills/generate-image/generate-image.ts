@@ -2,6 +2,9 @@
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { request as httpsRequest } from "node:https";
+import { request as httpRequest } from "node:http";
+import type { IncomingMessage } from "node:http";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -70,22 +73,73 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch with optional proxy
+// Fetch with optional proxy (zero dependencies)
 // ---------------------------------------------------------------------------
+
+function readBody(res: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    res.on("data", (c: Buffer) => chunks.push(c));
+    res.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
+    res.on("error", reject);
+  });
+}
+
+async function fetchViaProxy(
+  targetUrl: string,
+  init: { method: string; headers: Record<string, string>; body: string },
+  proxyUrl: string
+): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> }> {
+  const target = new URL(targetUrl);
+  const proxy = new URL(proxyUrl);
+
+  // CONNECT tunnel for HTTPS through proxy
+  return new Promise((resolveOuter, rejectOuter) => {
+    const connectReq = httpRequest({
+      host: proxy.hostname,
+      port: parseInt(proxy.port || "80", 10),
+      method: "CONNECT",
+      path: `${target.hostname}:${target.port || "443"}`,
+    });
+
+    connectReq.on("connect", (_res, socket) => {
+      const req = httpsRequest(
+        {
+          hostname: target.hostname,
+          port: target.port || 443,
+          path: target.pathname + target.search,
+          method: init.method,
+          headers: init.headers,
+          socket,
+          agent: false as unknown as undefined,
+        },
+        (res) => {
+          const textFn = () => readBody(res);
+          resolveOuter({
+            ok: res.statusCode! >= 200 && res.statusCode! < 300,
+            status: res.statusCode!,
+            text: textFn,
+            json: () => textFn().then(JSON.parse),
+          });
+        }
+      );
+      req.on("error", rejectOuter);
+      req.write(init.body);
+      req.end();
+    });
+
+    connectReq.on("error", rejectOuter);
+    connectReq.end();
+  });
+}
 
 async function fetchWithProxy(
   url: string,
-  init: RequestInit,
+  init: { method: string; headers: Record<string, string>; body: string },
   proxy?: string
-): Promise<Response> {
+): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<unknown> }> {
   if (proxy) {
-    // Use undici ProxyAgent (bundled with Node 18+)
-    const { ProxyAgent, fetch: undiciFetch } = await import("undici");
-    const agent = new ProxyAgent(proxy);
-    return undiciFetch(url, {
-      ...init,
-      dispatcher: agent,
-    } as Parameters<typeof undiciFetch>[1]) as unknown as Response;
+    return fetchViaProxy(url, init, proxy);
   }
   return fetch(url, init);
 }
