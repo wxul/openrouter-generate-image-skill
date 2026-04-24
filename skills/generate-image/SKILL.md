@@ -37,6 +37,7 @@ npx tsx generate-image.ts \
 | `--output` | No | auto (timestamp-slug.png) | Output filename |
 | `--dir` | No | `./generated-images` | Output directory |
 | `--proxy` | No | - | HTTP proxy URL |
+| `--ref` | No | - | Reference image for image-to-image / edit (local path, http(s) URL, or data URL). Repeatable — pass the flag multiple times to attach several refs. |
 
 ## Supported Models
 
@@ -72,6 +73,19 @@ npx tsx generate-image.ts \
 npx tsx generate-image.ts \
   --prompt "pixel art cat sitting on a desk" \
   --proxy "http://127.0.0.1:7890"
+
+# With reference images (image-to-image / redraw in a new style)
+npx tsx generate-image.ts \
+  --prompt "Redraw the subject of the reference photo in Studio Ghibli style" \
+  --ref "./input/photo.jpg" \
+  --model "google/gemini-3.1-flash-image-preview"
+
+# Multiple reference images (e.g., characters or objects to combine)
+npx tsx generate-image.ts \
+  --prompt "Put the two tanks from the references into a cartoon meme where the first one bonks the second" \
+  --ref "./tank-a.png" \
+  --ref "./tank-b.png" \
+  --model "openai/gpt-5.4-image-2"
 ```
 
 ## Troubleshooting

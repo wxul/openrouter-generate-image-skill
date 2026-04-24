@@ -1,7 +1,7 @@
 #!/usr/bin/env npx tsx
 
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
+import { extname, join, resolve } from "node:path";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
 import type { IncomingMessage } from "node:http";
@@ -18,6 +18,7 @@ interface CliArgs {
   output: string;
   dir: string;
   proxy?: string;
+  refs: string[];
 }
 
 interface OpenRouterChoice {
@@ -39,10 +40,17 @@ interface OpenRouterResponse {
 function parseArgs(argv: string[]): CliArgs {
   const args = argv.slice(2);
   const map = new Map<string, string>();
+  const refs: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     if (args[i].startsWith("--") && i + 1 < args.length) {
-      map.set(args[i].slice(2), args[i + 1]);
+      const key = args[i].slice(2);
+      const value = args[i + 1];
+      if (key === "ref") {
+        refs.push(value);
+      } else {
+        map.set(key, value);
+      }
       i++;
     }
   }
@@ -69,7 +77,30 @@ function parseArgs(argv: string[]): CliArgs {
     output: map.get("output") ?? defaultOutput,
     dir: map.get("dir") ?? "./generated-images",
     proxy: map.get("proxy"),
+    refs,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Reference image loader (local path → data URL)
+// ---------------------------------------------------------------------------
+
+function loadRefAsDataUrl(pathOrUrl: string): string {
+  if (/^https?:\/\//i.test(pathOrUrl) || pathOrUrl.startsWith("data:")) {
+    return pathOrUrl;
+  }
+  const abs = resolve(pathOrUrl);
+  const buf = readFileSync(abs);
+  const ext = extname(abs).slice(1).toLowerCase() || "png";
+  const mime =
+    ext === "jpg" || ext === "jpeg"
+      ? "image/jpeg"
+      : ext === "webp"
+        ? "image/webp"
+        : ext === "gif"
+          ? "image/gif"
+          : "image/png";
+  return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,12 +232,23 @@ async function main() {
 
   // Build request body
   const aspectRatio = getAspectRatio(args.width, args.height);
+
+  const userContent: Array<Record<string, unknown>> = [
+    { type: "text", text: args.prompt },
+  ];
+  for (const ref of args.refs) {
+    userContent.push({
+      type: "image_url",
+      image_url: { url: loadRefAsDataUrl(ref) },
+    });
+  }
+
   const body: Record<string, unknown> = {
     model: args.model,
     messages: [
       {
         role: "user",
-        content: args.prompt,
+        content: args.refs.length > 0 ? userContent : args.prompt,
       },
     ],
     modalities: ["image", "text"],
@@ -218,6 +260,10 @@ async function main() {
   console.error(`Generating image with ${args.model}...`);
   console.error(`Prompt: "${args.prompt}"`);
   console.error(`Size: ${args.width}x${args.height}`);
+  if (args.refs.length > 0) {
+    console.error(`Reference images: ${args.refs.length}`);
+    for (const ref of args.refs) console.error(`  - ${ref}`);
+  }
 
   const baseUrl = (
     process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1"
